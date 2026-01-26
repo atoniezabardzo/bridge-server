@@ -225,13 +225,6 @@ async function sendToDiscord(payload) {
         
         console.log("Sent notification to Discord.");
         
-        // Auto-Delete Logic REMOVED per user request
-        /*
-        if (response.data && response.data.id) {
-             // ... deletion code removed ...
-        }
-        */
-        
         return { success: true };
     } catch (error) {
         console.error("Failed to send to Discord:", error.message);
