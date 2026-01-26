@@ -39,7 +39,7 @@ wss.on('connection', (ws) => {
             // Ignore ping messages to keep console clean
             if (data.type === 'ping') return;
 
-            console.log('Received WebSocket message:', msgString);
+            // console.log('Received WebSocket message:', msgString); // Commented out to reduce noise
 
             // Handle animal logs from WebSocket same as Webhook
             if (data.type === 'animal_log' && data.animals && data.animals.length > 0) {
@@ -55,7 +55,7 @@ wss.on('connection', (ws) => {
                         uniqueAnimals.push(animal);
                         setTimeout(() => recentLogs.delete(key), 60000);
                     } else {
-                        console.log(`[Server] Suppressed duplicate (WS): ${animal.Name}`);
+                        // console.log(`[Server] Suppressed duplicate (WS): ${animal.Name}`);
                     }
                 }
 
@@ -152,7 +152,7 @@ app.post('/logs', (req, res) => {
                 // Expire cache after 60 seconds
                 setTimeout(() => recentLogs.delete(key), 60000);
             } else {
-                console.log(`[Server] Suppressed duplicate: ${animal.Name}`);
+                // console.log(`[Server] Suppressed duplicate: ${animal.Name}`);
             }
         }
         
@@ -182,18 +182,30 @@ async function sendToDiscord(payload) {
     const jobId = payload.jobId;
     
     // Create a rich embed for Discord
+    // Group animals by Name + Generation
+    const animalCounts = {};
+    for (const a of animals) {
+        const key = `${a.Name}|${a.Generation || ''}`;
+        if (!animalCounts[key]) {
+            animalCounts[key] = { count: 0, name: a.Name, gen: a.Generation };
+        }
+        animalCounts[key].count++;
+    }
+
+    const descriptionLines = Object.values(animalCounts).map(item => {
+        let line = `${item.count}x ${item.name}`;
+        if (item.gen) {
+            line += ` ${item.gen}`;
+        }
+        return line;
+    });
+
     const embed = {
         title: "🐈  Animals Detected!",
         color: 0x2F3136, // Dark Gray (Discord Background Color)
         description: `**Server Job ID:** \`${jobId}\`\n\n` + 
                      "```\n" + 
-                     animals.map(a => {
-                         let line = `1x ${a.Name}`;
-                         if (a.Generation) {
-                             line += ` ${a.Generation}`;
-                         }
-                         return line;
-                     }).join('\n') + 
+                     descriptionLines.join('\n') + 
                      "\n```",
         footer: {
             text: `Scan Time: ${new Date().toLocaleTimeString()}`
