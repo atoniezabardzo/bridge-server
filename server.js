@@ -110,7 +110,7 @@ async function processQueue() {
 }
 
 // Updated Webhook Endpoint
-app.post('/webhook', (req, res) => {
+app.post('/logs', (req, res) => {
     const data = req.body;
     console.log('Received Webhook data:', JSON.stringify(data, null, 2));
 
@@ -202,7 +202,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 server.listen(port, () => {
     console.log(`Bridge server listening on port ${port}`);
-    console.log(`Webhook URL: http://localhost:${port}/webhook`);
+    console.log(`Webhook URL: http://localhost:${port}/logs`);
     console.log(`WebSocket URL: ws://localhost:${port}`);
 }).on('error', (err) => {
     console.error('Server failed to start:', err);
