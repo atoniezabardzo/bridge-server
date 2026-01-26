@@ -43,13 +43,28 @@ wss.on('connection', (ws) => {
 
             // Handle animal logs from WebSocket same as Webhook
             if (data.type === 'animal_log' && data.animals && data.animals.length > 0) {
-                console.log("WebSocket: Conditions met. Adding to Discord queue...");
-                
                 // Broadcast this animal log to OTHER connected clients (like the autojoiner)
                 broadcast(data);
 
-                messageQueue.push(data);
-                processQueue();
+                // Server-Side Deduplication
+                const uniqueAnimals = [];
+                for (const animal of data.animals) {
+                    const key = `${data.jobId}_${animal.Name}_${animal.Generation || ''}`;
+                    if (!recentLogs.has(key)) {
+                        recentLogs.add(key);
+                        uniqueAnimals.push(animal);
+                        setTimeout(() => recentLogs.delete(key), 60000);
+                    } else {
+                        console.log(`[Server] Suppressed duplicate (WS): ${animal.Name}`);
+                    }
+                }
+
+                if (uniqueAnimals.length > 0) {
+                    const payload = { ...data, animals: uniqueAnimals };
+                    console.log("WebSocket: Adding to Discord queue...");
+                    messageQueue.push(payload);
+                    processQueue();
+                }
             }
         } catch (e) {
             console.error("Failed to parse WebSocket message:", e);
@@ -64,6 +79,9 @@ wss.on('connection', (ws) => {
 
 const messageQueue = [];
 let isProcessingQueue = false;
+
+// Server-Side Deduplication Cache
+const recentLogs = new Set();
 
 // Worker function to process the queue
 async function processQueue() {
@@ -123,9 +141,28 @@ app.post('/logs', (req, res) => {
 
     // Send to Discord (Via Queue)
     if (data.type === 'animal_log' && data.animals && data.animals.length > 0) {
-        console.log("Conditions met. Adding to Discord queue...");
-        messageQueue.push(data);
-        processQueue();
+        // Server-Side Deduplication
+        const uniqueAnimals = [];
+        
+        for (const animal of data.animals) {
+            const key = `${data.jobId}_${animal.Name}_${animal.Generation || ''}`;
+            if (!recentLogs.has(key)) {
+                recentLogs.add(key);
+                uniqueAnimals.push(animal);
+                // Expire cache after 60 seconds
+                setTimeout(() => recentLogs.delete(key), 60000);
+            } else {
+                console.log(`[Server] Suppressed duplicate: ${animal.Name}`);
+            }
+        }
+        
+        if (uniqueAnimals.length > 0) {
+            // Create a new payload with only unique animals
+            const payload = { ...data, animals: uniqueAnimals };
+            console.log("Adding to Discord queue...");
+            messageQueue.push(payload);
+            processQueue();
+        }
     } else {
         console.log("Skipping Discord: Condition failed. Type:", data.type, "Animals:", data.animals ? data.animals.length : "None");
     }
@@ -165,10 +202,27 @@ async function sendToDiscord(payload) {
 
     try {
         console.log("Sending POST request to Discord Webhook...");
-        await axios.post(DISCORD_WEBHOOK_URL, {
+        
+        // Add wait=true to get the message ID back
+        const response = await axios.post(`${DISCORD_WEBHOOK_URL}?wait=true`, {
             embeds: [embed]
         });
+        
         console.log("Sent notification to Discord.");
+        
+        // Auto-Delete Logic (Delete after 60 seconds)
+        if (response.data && response.data.id) {
+            const messageId = response.data.id;
+            setTimeout(async () => {
+                try {
+                    await axios.delete(`${DISCORD_WEBHOOK_URL}/messages/${messageId}`);
+                    console.log(`[Auto-Delete] Deleted message ${messageId}`);
+                } catch (delErr) {
+                    console.error(`[Auto-Delete] Failed to delete message: ${delErr.message}`);
+                }
+            }, 60000); // 60 seconds
+        }
+        
         return { success: true };
     } catch (error) {
         console.error("Failed to send to Discord:", error.message);
