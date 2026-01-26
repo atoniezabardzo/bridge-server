@@ -60,6 +60,9 @@ wss.on('connection', (ws) => {
                 }
 
                 if (uniqueAnimals.length > 0) {
+                    // Log the raw message ONLY if it's not a duplicate (User Request)
+                    console.log('Received WebSocket message:', msgString);
+                    
                     const payload = { ...data, animals: uniqueAnimals };
                     console.log("WebSocket: Adding to Discord queue...");
                     messageQueue.push(payload);
