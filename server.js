@@ -110,6 +110,10 @@ async function processQueue() {
 }
 
 // Updated Webhook Endpoint
+app.get('/logs', (req, res) => {
+    res.status(200).send("This endpoint expects a POST request with log data. The server is working! 🟢");
+});
+
 app.post('/logs', (req, res) => {
     const data = req.body;
     console.log('Received Webhook data:', JSON.stringify(data, null, 2));
