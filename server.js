@@ -203,25 +203,19 @@ async function sendToDiscord(payload) {
     try {
         console.log("Sending POST request to Discord Webhook...");
         
-        // Add wait=true to get the message ID back
+        // Add wait=true to get the message ID back (Optional now, but harmless to keep)
         const response = await axios.post(`${DISCORD_WEBHOOK_URL}?wait=true`, {
             embeds: [embed]
         });
         
         console.log("Sent notification to Discord.");
         
-        // Auto-Delete Logic (Delete after 60 seconds)
+        // Auto-Delete Logic REMOVED per user request
+        /*
         if (response.data && response.data.id) {
-            const messageId = response.data.id;
-            setTimeout(async () => {
-                try {
-                    await axios.delete(`${DISCORD_WEBHOOK_URL}/messages/${messageId}`);
-                    console.log(`[Auto-Delete] Deleted message ${messageId}`);
-                } catch (delErr) {
-                    console.error(`[Auto-Delete] Failed to delete message: ${delErr.message}`);
-                }
-            }, 60000); // 60 seconds
+             // ... deletion code removed ...
         }
+        */
         
         return { success: true };
     } catch (error) {
