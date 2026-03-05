@@ -185,12 +185,13 @@ async function sendToDiscord(payload) {
     const jobId = payload.jobId;
     
     // Create a rich embed for Discord
-    // Group animals by Name + Generation
+    // Group animals by Name + Generation + Owner
     const animalCounts = {};
     for (const a of animals) {
-        const key = `${a.Name}|${a.Generation || ''}`;
+        const owner = a.Plot || "Unknown";
+        const key = `${a.Name}|${a.Generation || ''}|${owner}`;
         if (!animalCounts[key]) {
-            animalCounts[key] = { count: 0, name: a.Name, gen: a.Generation };
+            animalCounts[key] = { count: 0, name: a.Name, gen: a.Generation, owner: owner };
         }
         animalCounts[key].count++;
     }
@@ -200,6 +201,7 @@ async function sendToDiscord(payload) {
         if (item.gen) {
             line += ` ${item.gen}`;
         }
+        line += ` [${item.owner}]`;
         return line;
     });
 
@@ -209,7 +211,8 @@ async function sendToDiscord(payload) {
         description: `**Server Job ID:** \`${jobId}\`\n\n` + 
                      "```\n" + 
                      descriptionLines.join('\n') + 
-                     "\n```",
+                     "\n```" +
+                     `\n**<t:${Math.floor(Date.now() / 1000)}:R> | 𝐎𝐯𝐞𝐫𝐕𝐢𝐞𝐰 𝐀𝐉 👁**`,
         footer: {
             text: `Scan Time: ${new Date().toLocaleTimeString()}`
         }
