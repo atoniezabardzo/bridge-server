@@ -211,7 +211,7 @@ async function sendToDiscord(payload) {
                      descriptionLines.join('\n') + 
                      "\n```",
         footer: {
-            text: `Scan Time: ${new Date().toLocaleTimeString()}`
+            text: `Scan Time: ${new Date().toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin' })}`
         }
     };
 
