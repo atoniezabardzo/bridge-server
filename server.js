@@ -222,6 +222,8 @@ async function sendToDiscord(payload) {
         const genKey = (a.Generation || "").replace(/\s+/g, "").toLowerCase();
         const key = `${nameKey}|${genKey}`; 
         
+        console.log(`[DEBUG] Generated Key: "${key}" for "${name}"/"${gen}"`); // DEBUG LOG
+        
         counts[key] = (counts[key] || 0) + 1;
         
         // Store normalized key on object for retrieval later
