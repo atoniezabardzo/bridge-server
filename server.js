@@ -276,8 +276,6 @@ async function sendToDiscord(payload) {
     // Group duplicate animals
     const counts = {};
     
-    console.log(`[DEBUG] Processing ${animals.length} animals for Discord...`);
-
     // First pass: Count occurrences
     animals.forEach(a => {
         const rawName = a.Name || "";
@@ -288,8 +286,6 @@ async function sendToDiscord(payload) {
         const genKey = rawGen.replace(/\s+/g, "").toLowerCase();
         const key = `${nameKey}|${genKey}`; 
         
-        console.log(`[DEBUG] Animal: "${rawName}" Gen: "${rawGen}" -> Key: "${key}"`);
-
         counts[key] = (counts[key] || 0) + 1;
         a._groupKey = key;
     });
@@ -321,8 +317,6 @@ async function sendToDiscord(payload) {
         descriptionLines.push(`${countStr}${a.Name}${genStr}${plotStr}`);
         processedKeys.add(key);
     });
-
-    console.log("[DEBUG] Final Discord Message Lines:", JSON.stringify(descriptionLines, null, 2));
 
     const embed = {
         title: "🐈  Animals Detected!",
