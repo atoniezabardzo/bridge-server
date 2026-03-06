@@ -214,48 +214,38 @@ async function sendToDiscord(payload) {
     });
 
     // Group duplicate animals
-    // Note: To group them, the Key MUST be identical.
-    // If one animal has "Plot: A" and another has "Plot: B", they will NOT be grouped if we include Plot in the key.
-    // If we want to group by Animal Name + Generation regardless of Plot, we should exclude Plot from the key.
-    
     const counts = {};
     animals.forEach(a => {
-        // Use Name + Generation as the unique key for counting
-        const key = `${a.Name}|${a.Generation || ''}`; 
+        // Trim strings to avoid mismatches due to whitespace
+        const name = (a.Name || "").trim();
+        const gen = (a.Generation || "").trim();
+        const key = `${name}|${gen}`; 
         counts[key] = (counts[key] || 0) + 1;
+        
+        // Update animal object with trimmed values for later use
+        a.Name = name;
+        a.Generation = gen;
     });
 
     const descriptionLines = [];
     const processedKeys = new Set();
     
     animals.forEach(a => {
-        const key = `${a.Name}|${a.Generation || ''}`;
+        const key = `${a.Name}|${a.Generation}`;
         if (processedKeys.has(key)) return;
         
         const count = counts[key];
         const countStr = `${count}x `;
         const genStr = a.Generation ? ` ${a.Generation}` : '';
         
-        // If we are grouping multiple animals, displaying ONE plot name is misleading if they are on different plots.
-        // If count > 1, we should probably hide the plot or list "Multiple Plots".
-        // Or, if we are in "Anonymous" mode, plot is hidden/Debris anyway.
-        // Let's keep the plot of the FIRST one found for now, or omit it if grouped.
-        
         let plotStr = '';
         if (a.Plot) {
              if (count > 1) {
-                 // Check if all have same plot? Too complex for now.
-                 // Just show the plot of the first one, or maybe "[Multiple]"?
-                 // Let's just show the plot of this instance.
-                 plotStr = ` [${a.Plot}]`;
+                  plotStr = ` [${a.Plot}]`; // Just show the first one's plot
              } else {
-                 plotStr = ` [${a.Plot}]`;
+                  plotStr = ` [${a.Plot}]`;
              }
         }
-        
-        // Wait, if we group them, we output ONE line.
-        // If we group "2x Sigma", but one is Plot A and one is Plot B, showing "[Plot A]" implies both are there.
-        // But for the sake of the requested "2x" display, we must group them.
         
         descriptionLines.push(`${countStr}${a.Name}${genStr}${plotStr}`);
         processedKeys.add(key);
