@@ -231,6 +231,9 @@ async function sendToDiscord(payload) {
     const descriptionLines = [];
     const processedKeys = new Set();
     
+    // Sort logic might have moved them apart, but we iterate the full list.
+    // If we skip processedKeys, we only output the FIRST occurrence of a group.
+    
     animals.forEach(a => {
         const key = a._groupKey;
         if (processedKeys.has(key)) return;
@@ -239,7 +242,6 @@ async function sendToDiscord(payload) {
         const safeCount = parseInt(count) || 1;
         
         const countStr = `${safeCount}x `;
-        // Use the Original strings for display
         const genStr = a.Generation ? ` ${a.Generation}` : '';
         
         let plotStr = '';
