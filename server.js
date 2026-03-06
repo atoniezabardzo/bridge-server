@@ -46,27 +46,60 @@ wss.on('connection', (ws) => {
                 // Broadcast this animal log to OTHER connected clients (like the autojoiner)
                 broadcast(data);
 
-                // Server-Side Deduplication
-                const uniqueAnimals = [];
-                for (const animal of data.animals) {
-                    const key = `${data.jobId}_${animal.Name}_${animal.Generation || ''}`;
-                    if (!recentLogs.has(key)) {
-                        recentLogs.add(key);
-                        uniqueAnimals.push(animal);
-                        setTimeout(() => recentLogs.delete(key), 60000);
-                    } else {
-                        // console.log(`[Server] Suppressed duplicate (WS): ${animal.Name}`);
+                // Server-Side Deduplication Logic - REVISED
+                // If the payload contains ANY new item, we treat the WHOLE payload as a "new state"
+                // and send the full list to Discord. This ensures "2x Animal" is displayed correctly.
+                
+                const animals = data.animals;
+                let hasNewItems = false;
+                const payloadOccurrenceMap = {};
+
+                // 1. Check if there are any NEW items in this payload
+                for (const animal of animals) {
+                    const rawName = animal.Name || "Unknown";
+                    const rawGen = animal.Generation || "";
+                    const baseKey = `${data.jobId}_${rawName}_${rawGen}`;
+                    
+                    payloadOccurrenceMap[baseKey] = (payloadOccurrenceMap[baseKey] || 0) + 1;
+                    const occurrenceIndex = payloadOccurrenceMap[baseKey];
+                    const uniqueKey = `${baseKey}_#${occurrenceIndex}`;
+
+                    if (!recentLogs.has(uniqueKey)) {
+                        hasNewItems = true;
                     }
                 }
 
-                if (uniqueAnimals.length > 0) {
-                    // Log the raw message ONLY if it's not a duplicate (User Request)
-                    console.log('Received WebSocket message:', msgString);
+                if (hasNewItems) {
+                    // 2. If new items exist, refresh timeouts for ALL items in this payload
+                    // so they aren't treated as "new" immediately in the next tick.
+                    const refreshOccurrenceMap = {};
                     
-                    const payload = { ...data, animals: uniqueAnimals };
+                    for (const animal of animals) {
+                        const rawName = animal.Name || "Unknown";
+                        const rawGen = animal.Generation || "";
+                        const baseKey = `${data.jobId}_${rawName}_${rawGen}`;
+                        
+                        refreshOccurrenceMap[baseKey] = (refreshOccurrenceMap[baseKey] || 0) + 1;
+                        const occurrenceIndex = refreshOccurrenceMap[baseKey];
+                        const uniqueKey = `${baseKey}_#${occurrenceIndex}`;
+
+                        // Clear existing timeout if it exists
+                        if (recentLogs.has(uniqueKey)) {
+                            clearTimeout(recentLogs.get(uniqueKey));
+                        }
+                        
+                        // Set new timeout (60s)
+                        const timeoutId = setTimeout(() => recentLogs.delete(uniqueKey), 60000);
+                        recentLogs.set(uniqueKey, timeoutId);
+                    }
+
+                    // 3. Send the FULL payload to Discord
+                    console.log('Received WebSocket message with NEW items:', msgString);
                     console.log("WebSocket: Adding to Discord queue...");
-                    messageQueue.push(payload);
+                    messageQueue.push(data); // Push original data with ALL animals
                     processQueue();
+                } else {
+                    // console.log("[Server] Suppressed duplicate payload (All items recently seen)");
                 }
             }
         } catch (e) {
@@ -84,9 +117,10 @@ const messageQueue = [];
 let isProcessingQueue = false;
 
 // Server-Side Deduplication Cache
-const recentLogs = new Set();
+// Map<Key, TimeoutID>
+const recentLogs = new Map();
 
-// Worker function to process the queue
+// Removed getUniqueAnimals helper as logic is now inline above
 async function processQueue() {
     if (isProcessingQueue || messageQueue.length === 0) return;
 
@@ -144,27 +178,53 @@ app.post('/logs', (req, res) => {
 
     // Send to Discord (Via Queue)
     if (data.type === 'animal_log' && data.animals && data.animals.length > 0) {
-        // Server-Side Deduplication
-        const uniqueAnimals = [];
-        
-        for (const animal of data.animals) {
-            const key = `${data.jobId}_${animal.Name}_${animal.Generation || ''}`;
-            if (!recentLogs.has(key)) {
-                recentLogs.add(key);
-                uniqueAnimals.push(animal);
-                // Expire cache after 60 seconds
-                setTimeout(() => recentLogs.delete(key), 60000);
-            } else {
-                // console.log(`[Server] Suppressed duplicate: ${animal.Name}`);
+        // Server-Side Deduplication Logic - REVISED
+        const animals = data.animals;
+        let hasNewItems = false;
+        const payloadOccurrenceMap = {};
+
+        // 1. Check if there are any NEW items in this payload
+        for (const animal of animals) {
+            const rawName = animal.Name || "Unknown";
+            const rawGen = animal.Generation || "";
+            const baseKey = `${data.jobId}_${rawName}_${rawGen}`;
+            
+            payloadOccurrenceMap[baseKey] = (payloadOccurrenceMap[baseKey] || 0) + 1;
+            const occurrenceIndex = payloadOccurrenceMap[baseKey];
+            const uniqueKey = `${baseKey}_#${occurrenceIndex}`;
+
+            if (!recentLogs.has(uniqueKey)) {
+                hasNewItems = true;
             }
         }
-        
-        if (uniqueAnimals.length > 0) {
-            // Create a new payload with only unique animals
-            const payload = { ...data, animals: uniqueAnimals };
-            console.log("Adding to Discord queue...");
-            messageQueue.push(payload);
+
+        if (hasNewItems) {
+            // 2. If new items exist, refresh timeouts for ALL items in this payload
+            const refreshOccurrenceMap = {};
+            
+            for (const animal of animals) {
+                const rawName = animal.Name || "Unknown";
+                const rawGen = animal.Generation || "";
+                const baseKey = `${data.jobId}_${rawName}_${rawGen}`;
+                
+                refreshOccurrenceMap[baseKey] = (refreshOccurrenceMap[baseKey] || 0) + 1;
+                const occurrenceIndex = refreshOccurrenceMap[baseKey];
+                const uniqueKey = `${baseKey}_#${occurrenceIndex}`;
+
+                if (recentLogs.has(uniqueKey)) {
+                    clearTimeout(recentLogs.get(uniqueKey));
+                }
+                
+                const timeoutId = setTimeout(() => recentLogs.delete(uniqueKey), 60000);
+                recentLogs.set(uniqueKey, timeoutId);
+            }
+            
+            // 3. Send the FULL payload to Discord
+            console.log("Adding to Discord queue (Webhook)...");
+            messageQueue.push(data); // Push original data with ALL animals
             processQueue();
+        } else {
+             // console.log("[Server] Suppressed duplicate payload (Webhook)");
         }
     } else {
         console.log("Skipping Discord: Condition failed. Type:", data.type, "Animals:", data.animals ? data.animals.length : "None");
@@ -215,42 +275,43 @@ async function sendToDiscord(payload) {
 
     // Group duplicate animals
     const counts = {};
+    
+    console.log(`[DEBUG] Processing ${animals.length} animals for Discord...`);
+
+    // First pass: Count occurrences
     animals.forEach(a => {
-        // Aggressive Normalization: Remove ALL whitespace and lowercase
         const rawName = a.Name || "";
         const rawGen = a.Generation || "";
         
+        // Remove ALL whitespace and lowercase for key
         const nameKey = rawName.replace(/\s+/g, "").toLowerCase();
         const genKey = rawGen.replace(/\s+/g, "").toLowerCase();
         const key = `${nameKey}|${genKey}`; 
         
-        // console.log(`[DEBUG] Generated Key: "${key}" for "${rawName}"/"${rawGen}"`); // DEBUG LOG
-        
+        console.log(`[DEBUG] Animal: "${rawName}" Gen: "${rawGen}" -> Key: "${key}"`);
+
         counts[key] = (counts[key] || 0) + 1;
-        
-        // Store normalized key on object for retrieval later
         a._groupKey = key;
     });
 
     const descriptionLines = [];
     const processedKeys = new Set();
     
-    // Sort logic might have moved them apart, but we iterate the full list.
-    // If we skip processedKeys, we only output the FIRST occurrence of a group.
-    
+    // Second pass: Generate lines
     animals.forEach(a => {
         const key = a._groupKey;
+        
+        // Only process each unique key once
         if (processedKeys.has(key)) return;
         
-        const count = counts[key];
-        const safeCount = parseInt(count) || 1;
+        const count = counts[key] || 1; // Default to 1 just in case
+        const countStr = `${count}x `;
         
-        const countStr = `${safeCount}x `;
         const genStr = a.Generation ? ` ${a.Generation}` : '';
         
         let plotStr = '';
         if (a.Plot) {
-             if (safeCount > 1) {
+             if (count > 1) {
                   plotStr = ` [${a.Plot}]`; 
              } else {
                   plotStr = ` [${a.Plot}]`;
