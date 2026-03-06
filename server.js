@@ -322,6 +322,8 @@ async function sendToDiscord(payload) {
         processedKeys.add(key);
     });
 
+    console.log("[DEBUG] Final Discord Message Lines:", JSON.stringify(descriptionLines, null, 2));
+
     const embed = {
         title: "🐈  Animals Detected!",
         color: 0x2F3136, // Dark Gray (Discord Background Color)
