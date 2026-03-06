@@ -216,32 +216,36 @@ async function sendToDiscord(payload) {
     // Group duplicate animals
     const counts = {};
     animals.forEach(a => {
-        // Trim strings to avoid mismatches due to whitespace
-        const name = (a.Name || "").trim();
-        const gen = (a.Generation || "").trim();
-        const key = `${name}|${gen}`; 
+        // Aggressive Normalization: Remove ALL whitespace and lowercase
+        // This is ONLY for the key, we still display the original name/gen
+        const nameKey = (a.Name || "").replace(/\s+/g, "").toLowerCase();
+        const genKey = (a.Generation || "").replace(/\s+/g, "").toLowerCase();
+        const key = `${nameKey}|${genKey}`; 
+        
         counts[key] = (counts[key] || 0) + 1;
         
-        // Update animal object with trimmed values for later use
-        a.Name = name;
-        a.Generation = gen;
+        // Store normalized key on object for retrieval later
+        a._groupKey = key;
     });
 
     const descriptionLines = [];
     const processedKeys = new Set();
     
     animals.forEach(a => {
-        const key = `${a.Name}|${a.Generation}`;
+        const key = a._groupKey;
         if (processedKeys.has(key)) return;
         
         const count = counts[key];
-        const countStr = `${count}x `;
+        const safeCount = parseInt(count) || 1;
+        
+        const countStr = `${safeCount}x `;
+        // Use the Original strings for display
         const genStr = a.Generation ? ` ${a.Generation}` : '';
         
         let plotStr = '';
         if (a.Plot) {
-             if (count > 1) {
-                  plotStr = ` [${a.Plot}]`; // Just show the first one's plot
+             if (safeCount > 1) {
+                  plotStr = ` [${a.Plot}]`; 
              } else {
                   plotStr = ` [${a.Plot}]`;
              }
