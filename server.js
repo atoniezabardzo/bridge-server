@@ -175,88 +175,6 @@ app.post('/logs', (req, res) => {
 
     // ... (rest of the connection logic)
 
-// --- Discord Helper Functions ---
-
-// Cache for Animal Images (Start with empty, fill dynamically)
-const ANIMAL_IMAGES = {};
-
-// Helper to fetch image from Fandom Wiki
-async function fetchWikiImage(animalName) {
-    if (!animalName) return null;
-
-    // Check cache first
-    if (ANIMAL_IMAGES[animalName]) {
-        return ANIMAL_IMAGES[animalName];
-    }
-
-    try {
-        // Format URL: Replace spaces with underscores
-        const wikiUrl = `https://stealabrainrot.fandom.com/wiki/${animalName.split(' ').join('_')}`;
-        console.log(`[Wiki Fetch] Fetching image for: ${animalName} from ${wikiUrl}`);
-
-        const response = await axios.get(wikiUrl, {
-            timeout: 5000, // 5s timeout
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
-                'Upgrade-Insecure-Requests': '1'
-            }
-        });
-
-        // Regex to find og:image meta tag
-        // <meta property="og:image" content="https://static.wikia.nocookie.net/..." />
-        const match = response.data.match(/property="og:image"\s+content="([^"]+)"/i);
-        
-        if (match && match[1]) {
-            const imageUrl = match[1];
-            console.log(`[Wiki Fetch] Found image: ${imageUrl}`);
-            ANIMAL_IMAGES[animalName] = imageUrl; // Cache it
-            return imageUrl;
-        } else {
-            console.log(`[Wiki Fetch] No og:image found for ${animalName}`);
-            ANIMAL_IMAGES[animalName] = "NOT_FOUND"; // Cache failure to avoid refetching
-            return null;
-        }
-    } catch (error) {
-        console.error(`[Wiki Fetch] Failed for ${animalName}: ${error.message}`);
-        ANIMAL_IMAGES[animalName] = "NOT_FOUND";
-        return null;
-    }
-}
-
-// Helper to parse generation strings (e.g., "250M/s") into numbers for comparison
-function parseGeneration(genStr) {
-    if (!genStr) return 0;
-    // Remove '/s' and commas, trim whitespace
-    const cleanStr = genStr.toString().replace(/\/s/gi, '').replace(/,/g, '').trim();
-    
-    // Regex to separate number and suffix
-    const match = cleanStr.match(/^([\d\.]+)([a-zA-Z]*)$/);
-    if (!match) return 0;
-    
-    const val = parseFloat(match[1]);
-    const suffix = match[2].toLowerCase();
-    
-    const multipliers = {
-        'k': 1e3,
-        'm': 1e6,
-        'b': 1e9,
-        't': 1e12,
-        'q': 1e15, 'qa': 1e15,
-        'qi': 1e18,
-        'sx': 1e21,
-        'sp': 1e24,
-        'oc': 1e27,
-        'no': 1e30,
-        'dc': 1e33
-    };
-    
-    return val * (multipliers[suffix] || 1);
-}
-
 async function sendToDiscord(payload) {
     if (!DISCORD_WEBHOOK_URL) {
         console.log("Discord Webhook URL not set. Skipping Discord notification.");
@@ -266,64 +184,67 @@ async function sendToDiscord(payload) {
     const animals = payload.animals;
     const jobId = payload.jobId;
     
-    // 1. Find the "Best" Animal (Highest Generation)
-    let bestAnimal = null;
-    let maxGenValue = -1;
-
-    for (const animal of animals) {
-        const genVal = parseGeneration(animal.Generation);
-        if (genVal > maxGenValue) {
-            maxGenValue = genVal;
-            bestAnimal = animal;
-        }
-    }
+    // Create a rich embed for Discord
+    // Sort animals by generation (High to Low)
+    // Format: "$1.2K/s", "$50/s", "$100", etc.
+    // Need to parse the string value to a number for comparison
     
-    // Fallback: If parsing failed or list is empty, use the first one
-    if (!bestAnimal && animals.length > 0) {
-        bestAnimal = animals[0];
-    }
-
-    // 2. Group animals by Name + Generation for the description list
-    const animalCounts = {};
-    for (const a of animals) {
-        const key = `${a.Name}|${a.Generation || ''}`;
-        if (!animalCounts[key]) {
-            animalCounts[key] = { count: 0, name: a.Name, gen: a.Generation };
+    const parseGen = (genStr) => {
+        if (!genStr) return 0;
+        // Remove "$" and "/s" and commas
+        let clean = genStr.replace('$', '').replace('/s', '').replace(/,/g, '');
+        let multiplier = 1;
+        
+        if (clean.includes('K')) {
+            multiplier = 1000;
+            clean = clean.replace('K', '');
+        } else if (clean.includes('M')) {
+            multiplier = 1000000;
+            clean = clean.replace('M', '');
+        } else if (clean.includes('B')) {
+            multiplier = 1000000000;
+            clean = clean.replace('B', '');
         }
-        animalCounts[key].count++;
-    }
-
-    const descriptionLines = Object.values(animalCounts).map(item => {
-        let line = `${item.count}x ${item.name}`;
-        if (item.gen) {
-            line += ` ${item.gen}`;
-        }
-        return line;
+        
+        return parseFloat(clean) * multiplier;
+    };
+    
+    animals.sort((a, b) => {
+        return parseGen(b.Generation) - parseGen(a.Generation);
     });
 
-    // 3. Construct the Embed Title
-    // "Name Generation" (e.g., "Dragon Cannelloni 250M/s")
-    const embedTitle = bestAnimal 
-        ? `${bestAnimal.Name} ${bestAnimal.Generation || ''}`.trim()
-        : "Animals Detected";
+    // Group duplicate animals
+    const counts = {};
+    animals.forEach(a => {
+        const key = `${a.Name} ${a.Generation || ''}`;
+        counts[key] = (counts[key] || 0) + 1;
+    });
 
-    // 4. Try to fetch/find image for the best animal
-    let imageUrl = null;
-    let wikiUrl = null;
-    if (bestAnimal) {
-        // Construct Wiki URL for the user to click
-        const safeName = bestAnimal.Name.split(' ').join('_');
-        wikiUrl = `https://stealabrainrot.fandom.com/wiki/${safeName}`;
+    // Format description for Embed
+    // We iterate through the SORTED animals array to maintain order, 
+    // but we need to make sure we don't duplicate lines if we are grouping.
+    // Actually, grouping loses the specific order if we just iterate keys.
+    // Let's iterate sorted animals and skip if already processed.
+    
+    const descriptionLines = [];
+    const processedKeys = new Set();
+    
+    animals.forEach(a => {
+        const key = `${a.Name} ${a.Generation || ''}`;
+        if (processedKeys.has(key)) return;
         
-        // Fetch image (or get from cache)
-        imageUrl = await fetchWikiImage(bestAnimal.Name);
-        if (imageUrl === "NOT_FOUND") imageUrl = null;
-    }
+        const count = counts[key];
+        const countStr = count > 1 ? `${count}x ` : '';
+        const genStr = a.Generation ? ` ${a.Generation}` : '';
+        const plotStr = a.Plot ? ` [${a.Plot}]` : '';
+        
+        descriptionLines.push(`${countStr}${a.Name}${genStr}${plotStr}`);
+        processedKeys.add(key);
+    });
 
     const embed = {
-        title: embedTitle,
-        // url: wikiUrl, // REMOVED: User requested no link in title
-        color: 0x2F3136, // Dark Gray
+        title: "🐈  Animals Detected!",
+        color: 0x2F3136, // Dark Gray (Discord Background Color)
         description: `**Server Job ID:** \`${jobId}\`\n\n` + 
                      "```\n" + 
                      descriptionLines.join('\n') + 
@@ -333,15 +254,10 @@ async function sendToDiscord(payload) {
         }
     };
 
-    // 5. Add Image/Thumbnail if found
-    if (imageUrl) {
-        embed.thumbnail = { url: imageUrl };
-    }
-
     try {
         console.log("Sending POST request to Discord Webhook...");
         
-        // Add wait=true to get the message ID back
+        // Add wait=true to get the message ID back (Optional now, but harmless to keep)
         const response = await axios.post(`${DISCORD_WEBHOOK_URL}?wait=true`, {
             embeds: [embed]
         });
