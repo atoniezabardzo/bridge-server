@@ -234,7 +234,7 @@ async function sendToDiscord(payload) {
         if (processedKeys.has(key)) return;
         
         const count = counts[key];
-        const countStr = count > 1 ? `${count}x ` : '';
+        const countStr = `${count}x `; // Always show count, e.g., "1x Sigma", "2x Hydra"
         const genStr = a.Generation ? ` ${a.Generation}` : '';
         const plotStr = a.Plot ? ` [${a.Plot}]` : '';
         
