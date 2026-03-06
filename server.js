@@ -217,12 +217,14 @@ async function sendToDiscord(payload) {
     const counts = {};
     animals.forEach(a => {
         // Aggressive Normalization: Remove ALL whitespace and lowercase
-        // This is ONLY for the key, we still display the original name/gen
-        const nameKey = (a.Name || "").replace(/\s+/g, "").toLowerCase();
-        const genKey = (a.Generation || "").replace(/\s+/g, "").toLowerCase();
+        const rawName = a.Name || "";
+        const rawGen = a.Generation || "";
+        
+        const nameKey = rawName.replace(/\s+/g, "").toLowerCase();
+        const genKey = rawGen.replace(/\s+/g, "").toLowerCase();
         const key = `${nameKey}|${genKey}`; 
         
-        console.log(`[DEBUG] Generated Key: "${key}" for "${name}"/"${gen}"`); // DEBUG LOG
+        // console.log(`[DEBUG] Generated Key: "${key}" for "${rawName}"/"${rawGen}"`); // DEBUG LOG
         
         counts[key] = (counts[key] || 0) + 1;
         
