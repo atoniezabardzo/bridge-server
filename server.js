@@ -233,8 +233,6 @@ app.post('/logs', (req, res) => {
     res.status(200).send('Data received');
 });
 
-    // ... (rest of the connection logic)
-
 async function sendToDiscord(payload) {
     if (!DISCORD_WEBHOOK_URL) {
         console.log("Discord Webhook URL not set. Skipping Discord notification.");
@@ -307,11 +305,7 @@ async function sendToDiscord(payload) {
         
         let plotStr = '';
         if (a.Plot) {
-             if (count > 1) {
-                  plotStr = ` [${a.Plot}]`; 
-             } else {
-                  plotStr = ` [${a.Plot}]`;
-             }
+             plotStr = ` [${a.Plot}]`;
         }
         
         descriptionLines.push(`${countStr}${a.Name}${genStr}${plotStr}`);
@@ -320,9 +314,12 @@ async function sendToDiscord(payload) {
 
     const isDuel = payload.IsDuel === true;
     const titlePrefix = isDuel ? "[Duel] 🛡️ " : "";
+    
+    // Modification: Add 🌹 emoji if plot is "Carpet"
+    const carpetEmoji = payload.Plot === "Carpet" ? " 🌹" : "";
 
     const embed = {
-        title: `🐈 ${titlePrefix} Animals Detected!`,
+        title: `🐈 ${titlePrefix}Animals Detected!${carpetEmoji}`,
         color: 0x2F3136, // Dark Gray (Discord Background Color)
         description: `**Server Job ID:** \`${jobId}\`\n\n` + 
                      "```\n" + 
