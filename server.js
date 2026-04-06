@@ -231,6 +231,7 @@ async function sendToDiscord(payload) {
         return parseFloat(clean) * multiplier;
     };
     
+    // Sort animals by generation (High to Low)
     animals.sort((a, b) => {
         return parseGen(b.Generation) - parseGen(a.Generation);
     });
@@ -239,10 +240,8 @@ async function sendToDiscord(payload) {
     let hasCarpet = false;
     let hasDuel = false;
     
+    // First pass: Determine title status and create smart grouping keys
     animals.forEach(a => {
-        const rawName = a.Name || "";
-        const rawGen = a.Generation || "";
-        
         if (a.Plot === "Carpet") {
             hasCarpet = true;
         }
@@ -250,9 +249,16 @@ async function sendToDiscord(payload) {
             hasDuel = true;
         }
         
+        const rawName = a.Name || "";
+        const rawGen = a.Generation || "";
+        const rawPlot = a.Plot || "UserPlot"; // Default to "UserPlot" if Plot is missing/null
+        
+        // Smart Grouping Key: Name + Generation + Plot
         const nameKey = rawName.replace(/\s+/g, "").toLowerCase();
         const genKey = rawGen.replace(/\s+/g, "").toLowerCase();
-        const key = `${nameKey}|${genKey}`; 
+        const plotKey = rawPlot.replace(/\s+/g, "").toLowerCase();
+        
+        const key = `${nameKey}|${genKey}|${plotKey}`; 
         
         counts[key] = (counts[key] || 0) + 1;
         a._groupKey = key;
@@ -261,15 +267,18 @@ async function sendToDiscord(payload) {
     const descriptionLines = [];
     const processedKeys = new Set();
     
+    // Second pass: Generate lines using the smart grouping
     animals.forEach(a => {
         const key = a._groupKey;
+        
+        // Only process each unique key once
         if (processedKeys.has(key)) return;
         
         const count = counts[key] || 1;
         const countStr = `${count}x `;
         const genStr = a.Generation ? ` ${a.Generation}` : '';
         
-        // Modification: Removed [Plot] from the animal list
+        // The plot text is intentionally omitted from the final line output
         descriptionLines.push(`${countStr}${a.Name}${genStr}`);
         processedKeys.add(key);
     });
