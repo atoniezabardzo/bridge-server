@@ -39,22 +39,16 @@ wss.on('connection', (ws) => {
             // Ignore ping messages to keep console clean
             if (data.type === 'ping') return;
 
-            // console.log('Received WebSocket message:', msgString); // Commented out to reduce noise
-
             // Handle animal logs from WebSocket same as Webhook
             if (data.type === 'animal_log' && data.animals && data.animals.length > 0) {
                 // Broadcast this animal log to OTHER connected clients (like the autojoiner)
                 broadcast(data);
 
-                // Server-Side Deduplication Logic - REVISED
-                // If the payload contains ANY new item, we treat the WHOLE payload as a "new state"
-                // and send the full list to Discord. This ensures "2x Animal" is displayed correctly.
-                
+                // Server-Side Deduplication Logic
                 const animals = data.animals;
                 let hasNewItems = false;
                 const payloadOccurrenceMap = {};
 
-                // 1. Check if there are any NEW items in this payload
                 for (const animal of animals) {
                     const rawName = animal.Name || "Unknown";
                     const rawGen = animal.Generation || "";
@@ -70,8 +64,6 @@ wss.on('connection', (ws) => {
                 }
 
                 if (hasNewItems) {
-                    // 2. If new items exist, refresh timeouts for ALL items in this payload
-                    // so they aren't treated as "new" immediately in the next tick.
                     const refreshOccurrenceMap = {};
                     
                     for (const animal of animals) {
@@ -83,23 +75,18 @@ wss.on('connection', (ws) => {
                         const occurrenceIndex = refreshOccurrenceMap[baseKey];
                         const uniqueKey = `${baseKey}_#${occurrenceIndex}`;
 
-                        // Clear existing timeout if it exists
                         if (recentLogs.has(uniqueKey)) {
                             clearTimeout(recentLogs.get(uniqueKey));
                         }
                         
-                        // Set new timeout (60s)
                         const timeoutId = setTimeout(() => recentLogs.delete(uniqueKey), 60000);
                         recentLogs.set(uniqueKey, timeoutId);
                     }
 
-                    // 3. Send the FULL payload to Discord
                     console.log('Received WebSocket message with NEW items:', msgString);
                     console.log("WebSocket: Adding to Discord queue...");
-                    messageQueue.push(data); // Push original data with ALL animals
+                    messageQueue.push(data);
                     processQueue();
-                } else {
-                    // console.log("[Server] Suppressed duplicate payload (All items recently seen)");
                 }
             }
         } catch (e) {
@@ -116,28 +103,23 @@ wss.on('connection', (ws) => {
 const messageQueue = [];
 let isProcessingQueue = false;
 
-// Server-Side Deduplication Cache
-// Map<Key, TimeoutID>
 const recentLogs = new Map();
 
-// Removed getUniqueAnimals helper as logic is now inline above
 async function processQueue() {
     if (isProcessingQueue || messageQueue.length === 0) return;
 
     isProcessingQueue = true;
 
     while (messageQueue.length > 0) {
-        const payload = messageQueue[0]; // Peek first, remove only if successful or non-recoverable
+        const payload = messageQueue[0];
         
         try {
             const result = await sendToDiscord(payload);
             
             if (result.success) {
-                messageQueue.shift(); // Remove from queue
-                // Wait 4 seconds to be safe (15 requests per minute)
+                messageQueue.shift();
                 await new Promise(resolve => setTimeout(resolve, 4000));
             } else if (result.rateLimited) {
-                // Increment retry count to prevent infinite loops
                 payload.retryCount = (payload.retryCount || 0) + 1;
                 
                 if (payload.retryCount > 5) {
@@ -150,7 +132,6 @@ async function processQueue() {
                     console.log("[QUEUE RESUMED] Retrying message...");
                 }
             } else {
-                // Other error, drop message
                 console.warn("Dropping message due to unknown error.");
                 messageQueue.shift();
                 await new Promise(resolve => setTimeout(resolve, 2000));
@@ -164,7 +145,6 @@ async function processQueue() {
     isProcessingQueue = false;
 }
 
-// Updated Webhook Endpoint
 app.get('/logs', (req, res) => {
     res.status(200).send("This endpoint expects a POST request with log data. The server is working! 🟢");
 });
@@ -173,17 +153,13 @@ app.post('/logs', (req, res) => {
     const data = req.body;
     console.log('Received Webhook data:', JSON.stringify(data, null, 2));
 
-    // Broadcast to WebSocket clients
     broadcast({ type: 'webhook_forward', data: data });
 
-    // Send to Discord (Via Queue)
     if (data.type === 'animal_log' && data.animals && data.animals.length > 0) {
-        // Server-Side Deduplication Logic - REVISED
         const animals = data.animals;
         let hasNewItems = false;
         const payloadOccurrenceMap = {};
 
-        // 1. Check if there are any NEW items in this payload
         for (const animal of animals) {
             const rawName = animal.Name || "Unknown";
             const rawGen = animal.Generation || "";
@@ -199,7 +175,6 @@ app.post('/logs', (req, res) => {
         }
 
         if (hasNewItems) {
-            // 2. If new items exist, refresh timeouts for ALL items in this payload
             const refreshOccurrenceMap = {};
             
             for (const animal of animals) {
@@ -219,15 +194,10 @@ app.post('/logs', (req, res) => {
                 recentLogs.set(uniqueKey, timeoutId);
             }
             
-            // 3. Send the FULL payload to Discord
             console.log("Adding to Discord queue (Webhook)...");
-            messageQueue.push(data); // Push original data with ALL animals
+            messageQueue.push(data);
             processQueue();
-        } else {
-             // console.log("[Server] Suppressed duplicate payload (Webhook)");
         }
-    } else {
-        console.log("Skipping Discord: Condition failed. Type:", data.type, "Animals:", data.animals ? data.animals.length : "None");
     }
 
     res.status(200).send('Data received');
@@ -242,14 +212,8 @@ async function sendToDiscord(payload) {
     const animals = payload.animals;
     const jobId = payload.jobId;
     
-    // Create a rich embed for Discord
-    // Sort animals by generation (High to Low)
-    // Format: "$1.2K/s", "$50/s", "$100", etc.
-    // Need to parse the string value to a number for comparison
-    
     const parseGen = (genStr) => {
         if (!genStr) return 0;
-        // Remove "$" and "/s" and commas
         let clean = genStr.replace('$', '').replace('/s', '').replace(/,/g, '');
         let multiplier = 1;
         
@@ -271,15 +235,21 @@ async function sendToDiscord(payload) {
         return parseGen(b.Generation) - parseGen(a.Generation);
     });
 
-    // Group duplicate animals
     const counts = {};
+    let hasCarpet = false;
+    let hasDuel = false;
     
-    // First pass: Count occurrences
     animals.forEach(a => {
         const rawName = a.Name || "";
         const rawGen = a.Generation || "";
         
-        // Remove ALL whitespace and lowercase for key
+        if (a.Plot === "Carpet") {
+            hasCarpet = true;
+        }
+        if (a.IsDuel === true) {
+            hasDuel = true;
+        }
+        
         const nameKey = rawName.replace(/\s+/g, "").toLowerCase();
         const genKey = rawGen.replace(/\s+/g, "").toLowerCase();
         const key = `${nameKey}|${genKey}`; 
@@ -291,16 +261,12 @@ async function sendToDiscord(payload) {
     const descriptionLines = [];
     const processedKeys = new Set();
     
-    // Second pass: Generate lines
     animals.forEach(a => {
         const key = a._groupKey;
-        
-        // Only process each unique key once
         if (processedKeys.has(key)) return;
         
-        const count = counts[key] || 1; // Default to 1 just in case
+        const count = counts[key] || 1;
         const countStr = `${count}x `;
-        
         const genStr = a.Generation ? ` ${a.Generation}` : '';
         
         let plotStr = '';
@@ -312,15 +278,12 @@ async function sendToDiscord(payload) {
         processedKeys.add(key);
     });
 
-    const isDuel = payload.IsDuel === true;
-    const titlePrefix = isDuel ? "[Duel] 🛡️ " : "";
-    
-    // Modification: Add 🌹 emoji if plot is "Carpet"
-    const carpetEmoji = payload.Plot === "Carpet" ? " 🌹" : "";
+    const titlePrefix = hasDuel ? "[Duel] 🛡️ " : "";
+    const carpetEmoji = hasCarpet ? " 🌹" : "";
 
     const embed = {
         title: `🐈 ${titlePrefix}Animals Detected!${carpetEmoji}`,
-        color: 0x2F3136, // Dark Gray (Discord Background Color)
+        color: 0x2F3136,
         description: `**Server Job ID:** \`${jobId}\`\n\n` + 
                      "```\n" + 
                      descriptionLines.join('\n') + 
@@ -331,27 +294,15 @@ async function sendToDiscord(payload) {
     };
 
     try {
-        console.log("Sending POST request to Discord Webhook...");
-        
-        // Add wait=true to get the message ID back (Optional now, but harmless to keep)
         const response = await axios.post(`${DISCORD_WEBHOOK_URL}?wait=true`, {
             embeds: [embed]
         });
-        
-        console.log("Sent notification to Discord.");
-        
         return { success: true };
     } catch (error) {
         console.error("Failed to send to Discord:", error.message);
-        if (error.response) {
-             console.error("Discord Response Status:", error.response.status);
-             
-             // Check for Rate Limit (429)
-             if (error.response.status === 429) {
-                 const retryAfter = error.response.data.retry_after || 60;
-                 console.warn(`[RATE LIMIT] Discord blocked us! Retry after: ${retryAfter} seconds.`);
-                 return { success: false, rateLimited: true, retryAfter: retryAfter };
-             }
+        if (error.response && error.response.status === 429) {
+            const retryAfter = error.response.data.retry_after || 60;
+            return { success: false, rateLimited: true, retryAfter: retryAfter };
         }
         return { success: false, rateLimited: false };
     }
@@ -366,7 +317,6 @@ function broadcast(data) {
     }
 }
 
-// Error handling
 process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception:', err);
 });
@@ -377,8 +327,6 @@ process.on('unhandledRejection', (reason, promise) => {
 
 server.listen(port, () => {
     console.log(`Bridge server listening on port ${port}`);
-    console.log(`Webhook URL: http://localhost:${port}/logs`);
-    console.log(`WebSocket URL: ws://localhost:${port}`);
 }).on('error', (err) => {
     console.error('Server failed to start:', err);
 });
