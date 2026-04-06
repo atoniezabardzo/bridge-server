@@ -269,12 +269,8 @@ async function sendToDiscord(payload) {
         const countStr = `${count}x `;
         const genStr = a.Generation ? ` ${a.Generation}` : '';
         
-        let plotStr = '';
-        if (a.Plot) {
-             plotStr = ` [${a.Plot}]`;
-        }
-        
-        descriptionLines.push(`${countStr}${a.Name}${genStr}${plotStr}`);
+        // Modification: Removed [Plot] from the animal list
+        descriptionLines.push(`${countStr}${a.Name}${genStr}`);
         processedKeys.add(key);
     });
 
