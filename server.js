@@ -318,8 +318,11 @@ async function sendToDiscord(payload) {
         processedKeys.add(key);
     });
 
+    const isDuel = payload.IsDuel === true;
+    const titlePrefix = isDuel ? "[Duel] 🛡️ " : "";
+
     const embed = {
-        title: "🐈  Animals Detected!",
+        title: `🐈 ${titlePrefix} Animals Detected!`,
         color: 0x2F3136, // Dark Gray (Discord Background Color)
         description: `**Server Job ID:** \`${jobId}\`\n\n` + 
                      "```\n" + 
